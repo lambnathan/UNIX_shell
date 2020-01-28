@@ -2,6 +2,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <pwd.h>
+#include <stdlib.h>
 
 int main(int argc, char *argv[]){
 	// TODO: WRITE A MAIN 
@@ -12,8 +13,15 @@ int main(int argc, char *argv[]){
 	//printf("The username is: %s", p->pw_name);
 	for(;;){
 		printf("%s :~) $ ", p->pw_name); //prints command prompt
-		char input[100];
-		fgets(input, 100, stdin);
+		//char input[100];
+		//fgets(input, 100, stdin);
+		char* line = malloc(100);
+		line = fgets(1, 100, stdin);
+		if(line == NULL){
+			printf("ctrl-D pressed");
+			break;
+		}
+		free(line);
 		
 	}
 
