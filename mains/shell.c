@@ -16,12 +16,12 @@ int main(int argc, char *argv[]){
 		//char input[100];
 		//fgets(input, 100, stdin);
 		char* line = malloc(100);
-		line = fgets(1, 100, stdin);
+		line = fgets(line, 100, stdin);
 		if(line == NULL){
 			printf("ctrl-D pressed");
 			break;
 		}
-		free(line);
+		//free(line);
 		
 	}
 
