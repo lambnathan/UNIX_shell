@@ -4,6 +4,11 @@
 #include <pwd.h>
 #include <stdlib.h>
 
+#include <readline/history.h>
+#include <readline/readline.h>
+
+#include "parser.h"
+
 int main(int argc, char *argv[]){
 	// TODO: WRITE A MAIN 
 	//prrompt user for a command
@@ -11,18 +16,31 @@ int main(int argc, char *argv[]){
 	unsigned int uid = getuid();
 	struct passwd *p = getpwuid(uid);
 	//printf("The username is: %s", p->pw_name);
+	char good[] = ":)";
+	//char bad[] = ":(";
+
+	char* line;
+	using_history();
 	for(;;){
-		printf("%s :~) $ ", p->pw_name); //prints command prompt
-		//char input[100];
-		//fgets(input, 100, stdin);
-		char* line = malloc(100);
-		line = fgets(line, 100, stdin);
-		if(line == NULL){
-			printf("ctrl-D pressed");
-			break;
+		printf("%s %s $ ", p->pw_name, good); //prints command prompt
+		line = readline(NULL);
+		if(!line){
+			printf("ctr-d pressed\n");
+			
+			return 0;
 		}
-		//free(line);
+		char subbuff[5];
+		memcpy(subbuff, &line[0], 4);
+		//printf("subbuff: %s \n", subbuff);
+		if(strcmp(subbuff, "exit") == 0){
+			printf("you want to exit\n");
+			return 0;
+		}
+		//struct ast_statement_list *statements = parse_input(line);
+		printf("You entered: %s \n", line);
+		//statements->first
 		
+		free(line);
 	}
 
 

@@ -45,7 +45,8 @@ static void parseview(const char *input)
 	ast_statement_list_graph(ast, graph, &strings);
 	ast_statement_list_free(ast);
 	gvLayout(gvc, graph, "dot");
-	gvRender(gvc, graph, "xlib", NULL);
+	//gvRender(gvc, graph, "xlib", NULL);
+	gvRenderFilename(gvc, graph, "png", "parseview.png");
 	gvFreeLayout(gvc, graph);
 	agclose(graph);
 	arena_free(&strings);
