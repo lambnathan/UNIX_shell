@@ -8,6 +8,8 @@
 #include <readline/readline.h>
 
 #include "parser.h"
+#include "shell_builtins.h"
+#include "interpreter.h"
 
 int main(int argc, char *argv[]){
 	// TODO: WRITE A MAIN 
@@ -22,23 +24,26 @@ int main(int argc, char *argv[]){
 	char* line;
 	using_history();
 	for(;;){
-		printf("%s %s $ ", p->pw_name, good); //prints command prompt
-		line = readline(NULL);
+		printf("%s %s ", p->pw_name, good); //prints command prompt
+		line = readline("$ ");
 		if(!line){
 			printf("ctr-d pressed\n");
-			
-			return 0;
+			const char* const argv[] = {"exit", NULL}; //constant array of constant argument strings
+			builtin_command_get("exit")->function(interpreter_new(true), argv, 0, 1, 2);
 		}
 		char subbuff[5];
 		memcpy(subbuff, &line[0], 4);
-		//printf("subbuff: %s \n", subbuff);
+		subbuff[5] = '\0';
 		if(strcmp(subbuff, "exit") == 0){
 			printf("you want to exit\n");
-			return 0;
+			const char* const argv[] = {"exit", NULL}; //constant array of constant argument strings
+			builtin_command_get("exit")->function(interpreter_new(true), argv, 0, 1, 2);
 		}
-		//struct ast_statement_list *statements = parse_input(line);
-		printf("You entered: %s \n", line);
-		//statements->first
+
+		struct ast_statement_list *statements = parse_input(line);
+		//struct ast_argument_list *arglist = statements->first->pipeline->first->arglist;
+
+		ast_statement_list_free(statements);
 		
 		free(line);
 	}
