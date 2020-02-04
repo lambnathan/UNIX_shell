@@ -12,6 +12,7 @@
 #include "interpreter.h"
 
 void check_exit(struct ast_statement_list *statements);
+void check_history(struct ast_statement_list *statements);
 char** get_command_args(char* command, struct ast_argument_list *arglist);
 
 int main(int argc, char *argv[]){
@@ -67,6 +68,7 @@ int main(int argc, char *argv[]){
 		struct ast_statement_list *statements = parse_input(line);
 		//struct ast_argument_list *arglist = statements->first->pipeline->first->arglist;
 		check_exit(statements);
+		check_history(statements);
 
 		ast_statement_list_free(statements);
 		free(line);
@@ -99,6 +101,30 @@ void check_exit(struct ast_statement_list *statements){
 		//printf("you want to exit\n");
 		char** args = get_command_args("exit", statements->first->pipeline->first->arglist);
 		builtin_command_get("exit")->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
+		free(args);
+	}
+	return;
+}
+
+//check if the command was history
+void check_history(struct ast_statement_list *statements){
+	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
+	if(length_of_args != 7){ //invalid lenth to be history command
+		return;
+	}
+	char subbuff[8];
+	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 7);
+	char test[] = "history";
+	int i;
+	for(i = 0; i < 7; i++){
+		if(subbuff[i] != test[i]){//command not equal to history
+			break;
+		}
+	}
+	if(i == 7){
+		printf("history command was given\n");
+		char** args = get_command_args("history", statements->first->pipeline->first->arglist);
+		builtin_command_get("history")->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
 		free(args);
 	}
 	return;

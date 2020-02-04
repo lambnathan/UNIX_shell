@@ -14,7 +14,7 @@ static int exit_builtin(struct interpreter_state *state,
 
 	CHECK(error_fp);
 	CHECK(argv && argv[0]);
-
+	
 	if (argv[1]) {
 		if (argv[2]) {
 			fprintf(error_fp, "%s: too many arguments\n", argv[0]);
