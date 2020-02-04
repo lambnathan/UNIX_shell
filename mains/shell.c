@@ -11,8 +11,8 @@
 #include "shell_builtins.h"
 #include "interpreter.h"
 
-void check_exit(struct ast_statement_list *statements);
-void check_history(struct ast_statement_list *statements);
+void check_exit(struct ast_statement_list *statements, int *status);
+void check_history(struct ast_statement_list *statements, int* status);
 char** get_command_args(char* command, struct ast_argument_list *arglist);
 
 int main(int argc, char *argv[]){
@@ -23,7 +23,7 @@ int main(int argc, char *argv[]){
 	char frown[] = ":( $ ";
 	char* user_name = p->pw_name;
 	strcat(user_name, " ");
-	int good = 1; //good; no command has returned error yet
+	int good = 0; //good; no command has returned error yet (return value)
 
 	char* line;
 	using_history();
@@ -32,7 +32,7 @@ int main(int argc, char *argv[]){
 		//create the prompt
 		char* prompt = malloc(sizeof(char)*(strlen(user_name) + 5));
 		strcpy(prompt, user_name);
-		if(good){
+		if(good == 0){
 			strcat(prompt, smile); 
 		} 
 		else{
@@ -67,8 +67,8 @@ int main(int argc, char *argv[]){
 		}
 		struct ast_statement_list *statements = parse_input(line);
 		//struct ast_argument_list *arglist = statements->first->pipeline->first->arglist;
-		check_exit(statements);
-		check_history(statements);
+		check_exit(statements, &good);
+		check_history(statements, &good);
 
 		ast_statement_list_free(statements);
 		free(line);
@@ -81,7 +81,7 @@ int main(int argc, char *argv[]){
 }
 
 //check if the command was "exit"
-void check_exit(struct ast_statement_list *statements){
+void check_exit(struct ast_statement_list *statements, int* status){
 	//printf("in check exit\n");
 	int length_of_arg = statements->first->pipeline->first->arglist->first->parts->first->string->size;
 	if(length_of_arg != 4){
@@ -100,14 +100,17 @@ void check_exit(struct ast_statement_list *statements){
 	if(i == 4){
 		//printf("you want to exit\n");
 		char** args = get_command_args("exit", statements->first->pipeline->first->arglist);
-		builtin_command_get("exit")->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
+		struct builtin_command *cmd = builtin_command_get("exit");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
+		*status = retrn;
+
 		free(args);
 	}
 	return;
 }
 
 //check if the command was history
-void check_history(struct ast_statement_list *statements){
+void check_history(struct ast_statement_list *statements, int* status){
 	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
 	if(length_of_args != 7){ //invalid lenth to be history command
 		return;
@@ -124,7 +127,9 @@ void check_history(struct ast_statement_list *statements){
 	if(i == 7){
 		printf("history command was given\n");
 		char** args = get_command_args("history", statements->first->pipeline->first->arglist);
-		builtin_command_get("history")->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
+		struct builtin_command *cmd = builtin_command_get("history");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
+		*status = retrn;
 		free(args);
 	}
 	return;
