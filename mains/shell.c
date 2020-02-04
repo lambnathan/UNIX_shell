@@ -15,34 +15,65 @@ void check_exit(struct ast_statement_list *statements);
 char** get_command_args(char* command, struct ast_argument_list *arglist);
 
 int main(int argc, char *argv[]){
-	// TODO: WRITE A MAIN 
-	//prrompt user for a command
-	//should countinute to prompt until user types CTRL-D at an empty prompt, or uses the exit built-in to exit
 	unsigned int uid = getuid();
 	struct passwd *p = getpwuid(uid);
 	//printf("The username is: %s", p->pw_name);
-	char good[] = ":)";
-	//char bad[] = ":(";
+	char smile[] = ":) $ ";
+	char frown[] = ":( $ ";
+	char* user_name = p->pw_name;
+	strcat(user_name, " ");
+	int good = 1; //good; no command has returned error yet
 
 	char* line;
 	using_history();
+	//main shell loop
 	for(;;){
-		printf("%s %s ", p->pw_name, good); //prints command prompt
-		line = readline("$ ");
+		//create the prompt
+		char* prompt = malloc(sizeof(char)*(strlen(user_name) + 5));
+		strcpy(prompt, user_name);
+		if(good){
+			strcat(prompt, smile); 
+		} 
+		else{
+			strcat(prompt, frown);
+		}
+
+		line = readline(prompt);
 		if(!line){
 			printf("ctr-d pressed\n");
 			const char* const argv[] = {"exit", NULL}; //constant array of constant argument strings
 			builtin_command_get("exit")->function(interpreter_new(false), argv, 0, 1, 2);
 		}
 
+		add_history(line);
+		char *output = NULL;
+		int r = history_expand(line, &output);
+		if(r == 0){
+			printf("no expansion\n");
+			if(output != NULL){
+				printf("it worked: %s\n", output);
+			}
+		}
+		else if(r == 1){
+			printf("expansion took place\n");
+		}
+		else if(r == -1){
+			printf("There was an error in expansion\n");
+			good = 0;
+		}
+		else if(r == 2){
+			printf("the returned line should be displayed but not executed\n");
+		}
 		struct ast_statement_list *statements = parse_input(line);
 		//struct ast_argument_list *arglist = statements->first->pipeline->first->arglist;
 		check_exit(statements);
 
 		ast_statement_list_free(statements);
 		free(line);
+		free(prompt);
 	}
 	//free memory before exiting
+	free(user_name);
 	free(p);
 	return 0;
 }
