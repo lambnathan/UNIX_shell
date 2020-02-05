@@ -34,6 +34,10 @@ static int exit_builtin(struct interpreter_state *state,
 }
 DEFINE_BUILTIN_COMMAND("exit", exit_builtin);
 
+
+
+
+
 DEFTEST("builtins.exit.registered")
 {
 	struct builtin_command *command = builtin_command_get("exit");

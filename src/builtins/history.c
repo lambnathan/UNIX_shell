@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "error.h"
 #include "shell_builtins.h"
@@ -10,7 +11,6 @@ static int history_builtin(struct interpreter_state *state,
                         const char* const *argv, int input_fd, int output_fd,
                         int error_fd)
 {
-    //int status = 0;
     FILE *error_fp = fdopen(error_fd, "w");
     CHECK(error_fp);
     CHECK(argv && argv[0]);
@@ -27,6 +27,7 @@ static int history_builtin(struct interpreter_state *state,
             printf("%s %i\n", the_list[i]->line, i + 1);
         }
     }
+    fflush(error_fp);
     return 0;
 
 }

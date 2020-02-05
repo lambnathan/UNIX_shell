@@ -13,6 +13,7 @@
 
 void check_exit(struct ast_statement_list *statements, int *status);
 void check_history(struct ast_statement_list *statements, int* status);
+void check_echo(struct ast_statement_list *statements, int* status);
 char** get_command_args(char* command, struct ast_argument_list *arglist);
 
 int main(int argc, char *argv[]){
@@ -41,34 +42,48 @@ int main(int argc, char *argv[]){
 
 		line = readline(prompt);
 		if(!line){
-			printf("ctr-d pressed\n");
 			const char* const argv[] = {"exit", NULL}; //constant array of constant argument strings
 			builtin_command_get("exit")->function(interpreter_new(false), argv, 0, 1, 2);
 		}
 
-		add_history(line);
+		
 		char *output = NULL;
 		int r = history_expand(line, &output);
-		if(r == 0){
-			printf("no expansion\n");
-			if(output != NULL){
-				printf("it worked: %s\n", output);
-			}
+		if(r == 0){//no expansion took place
+
 		}
-		else if(r == 1){
-			printf("expansion took place\n");
+		else if(r == 1){//expansion took place
+			printf("%s\n", output);
+			add_history(line);
+			strcpy(line, output);
+			free(output);
+			//line = output; //set line = output, and then will rin through that command below
 		}
-		else if(r == -1){
-			printf("There was an error in expansion\n");
+		else if(r == -1){//error in expansion
+			fprintf(stderr, "There was an error in expansion: %s\n", output);
 			good = 0;
+			free(line);
+			free(prompt);
+			free(output);
+			continue;
 		}
-		else if(r == 2){
-			printf("the returned line should be displayed but not executed\n");
+		else if(r == 2){//returned line should be displayed but not executed (:p)
+			printf("%s\n", output);
+			free(line);
+			free(prompt);
+			free(output);
+			continue;
 		}
+		add_history(line);
+		
 		struct ast_statement_list *statements = parse_input(line);
 		//struct ast_argument_list *arglist = statements->first->pipeline->first->arglist;
+
+		//check for all of the builtin commands
+		//if a command is matched, it is executed inside the respectvie function, and then returns
 		check_exit(statements, &good);
 		check_history(statements, &good);
+		check_echo(statements, &good);
 
 		ast_statement_list_free(statements);
 		free(line);
@@ -89,7 +104,7 @@ void check_exit(struct ast_statement_list *statements, int* status){
 	}
 	char subbuff[5];
 	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 4);
-	subbuff[5] = '\0';
+	subbuff[4] = '\0';
 	char test[] = "exit";
 	int i;
 	for(i = 0; i < 4; i++){
@@ -117,6 +132,7 @@ void check_history(struct ast_statement_list *statements, int* status){
 	}
 	char subbuff[8];
 	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 7);
+	subbuff[7] = '\0';
 	char test[] = "history";
 	int i;
 	for(i = 0; i < 7; i++){
@@ -125,9 +141,34 @@ void check_history(struct ast_statement_list *statements, int* status){
 		}
 	}
 	if(i == 7){
-		printf("history command was given\n");
 		char** args = get_command_args("history", statements->first->pipeline->first->arglist);
 		struct builtin_command *cmd = builtin_command_get("history");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
+		*status = retrn;
+		free(args);
+	}
+	return;
+}
+
+//check if the echo command was given
+void check_echo(struct ast_statement_list *statements, int* status){
+	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
+	if(length_of_args != 4){
+		return;
+	}
+	char subbuff[5];
+	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 4);
+	subbuff[4] = '\0';
+	char test[] = "echo";
+	int i;
+	for(i = 0; i < 4; i++){
+		if(subbuff[i] != test[i]){
+			break;
+		}
+	}
+	if(i == 4){
+		char** args = get_command_args("echo", statements->first->pipeline->first->arglist);
+		struct builtin_command *cmd = builtin_command_get("echo");
 		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
 		*status = retrn;
 		free(args);
