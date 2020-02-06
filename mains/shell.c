@@ -187,7 +187,11 @@ char** get_command_args(char* command, struct ast_argument_list *arglist){
 	char **arr = malloc(sizeof(char*)*capacity);
 	arr[0] = command;
 	while(arglist->rest != NULL){
-		char* arg = arglist->rest->first->parts->first->string->data;
+		int size = arglist->rest->first->parts->first->string->size;
+		char* arg  = malloc(sizeof(char) * (size + 1));
+		memcpy(arg, arglist->rest->first->parts->first->string->data, size);
+		//char* arg = arglist->rest->first->parts->first->string->data;
+		arg[size] = '\0';
 		if(capacity == used){
 			capacity *= 2;
 			arr = realloc(arr, sizeof(char*) * capacity);
