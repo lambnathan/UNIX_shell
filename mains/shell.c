@@ -14,6 +14,7 @@
 void check_exit(struct ast_statement_list *statements, int *status);
 void check_history(struct ast_statement_list *statements, int* status);
 void check_echo(struct ast_statement_list *statements, int* status);
+void check_cd(struct ast_statement_list *statements, int* status);
 char** get_command_args(char* command, struct ast_argument_list *arglist);
 
 int main(int argc, char *argv[]){
@@ -84,6 +85,7 @@ int main(int argc, char *argv[]){
 		check_exit(statements, &good);
 		check_history(statements, &good);
 		check_echo(statements, &good);
+		check_cd(statements, &good);
 
 		ast_statement_list_free(statements);
 		free(line);
@@ -176,6 +178,32 @@ void check_echo(struct ast_statement_list *statements, int* status){
 	return;
 }
 
+//check if the cd command was given
+void check_cd(struct ast_statement_list * statements, int* status){
+	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
+	if(length_of_args != 2){
+		return;
+	}
+	char subbuff[3];
+	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 2);
+	subbuff[2] = '\0';
+	char test[] = "cd";
+	int i;
+	for(i = 0; i < 2; i++){
+		if(subbuff[i] != test[i]){
+			break;
+		}
+	}
+	if(i == 2){
+		char** args = get_command_args("cd", statements->first->pipeline->first->arglist);
+		struct builtin_command *cmd = builtin_command_get("cd");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
+		*status = retrn;
+		free(args);
+	}
+	return;
+}
+
 
 /*
  *function that takes in the command typed and creates a null terminated
@@ -199,6 +227,7 @@ char** get_command_args(char* command, struct ast_argument_list *arglist){
 		arr[used] = arg;
 		used++;
 		arglist = arglist->rest;
+		free(arg);
 	}
 	//add in terminating NULL
 	if(capacity == used){
