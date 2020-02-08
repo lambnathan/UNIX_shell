@@ -44,12 +44,24 @@ int main(int argc, char *argv[]){
 		}
 
 		line = readline(prompt);
-		if(!line){
+		
+		if(line == (char*)NULL){
 			const char* const argv[] = {"exit", NULL}; //constant array of constant argument strings
 			builtin_command_get("exit")->function(interpreter_new(false), argv, 0, 1, 2);
 		}
+		else if(line[0] == '\0'){//enter pressed with no other input
+			free(line);
+			continue;
+		}
+		else if(line[0] == ' '){
+			int i;
+			for(i = 0; line[i] == ' '; i++){} //tests if only spaces were entered
+			if(line[i] == '\0'){
+				free(line);
+				continue;
+			}
+		}
 
-		
 		char *output = NULL;
 		int r = history_expand(line, &output);
 		if(r == 0){//no expansion took place
@@ -92,6 +104,7 @@ int main(int argc, char *argv[]){
 
 		ast_statement_list_free(statements);
 		free(line);
+		free(output);
 		free(prompt);
 	}
 	//free memory before exiting
