@@ -15,6 +15,8 @@ void check_exit(struct ast_statement_list *statements, int *status);
 void check_history(struct ast_statement_list *statements, int* status);
 void check_echo(struct ast_statement_list *statements, int* status);
 void check_cd(struct ast_statement_list *statements, int* status);
+void check_pwd(struct ast_statement_list *statements, int* status);
+
 char** get_command_args(char* command, struct ast_argument_list *arglist);
 
 int main(int argc, char *argv[]){
@@ -86,6 +88,7 @@ int main(int argc, char *argv[]){
 		check_history(statements, &good);
 		check_echo(statements, &good);
 		check_cd(statements, &good);
+		check_pwd(statements, &good);
 
 		ast_statement_list_free(statements);
 		free(line);
@@ -204,6 +207,32 @@ void check_cd(struct ast_statement_list * statements, int* status){
 	return;
 }
 
+//check if the user entered the pwd command
+void check_pwd(struct ast_statement_list *statements, int* status){
+	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
+	if(length_of_args != 3){
+		return;
+	}
+	char subbuff[4];
+	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 3);
+	subbuff[3] = '\0';
+	char test[] = "pwd";
+	int i;
+	for(i = 0; i < 3; i++){
+		if(subbuff[i] != test[i]){
+			break;
+		}
+	}
+	if(i == 3){
+		char** args = get_command_args("pwd", statements->first->pipeline->first->arglist);
+		struct builtin_command *cmd = builtin_command_get("pwd");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
+		*status = retrn;
+		free(args);
+	}
+	return;
+}
+
 
 /*
  *function that takes in the command typed and creates a null terminated
@@ -218,7 +247,6 @@ char** get_command_args(char* command, struct ast_argument_list *arglist){
 		int size = arglist->rest->first->parts->first->string->size;
 		char* arg  = malloc(sizeof(char) * (size + 1));
 		memcpy(arg, arglist->rest->first->parts->first->string->data, size);
-		//char* arg = arglist->rest->first->parts->first->string->data;
 		arg[size] = '\0';
 		if(capacity == used){
 			capacity *= 2;
@@ -227,7 +255,6 @@ char** get_command_args(char* command, struct ast_argument_list *arglist){
 		arr[used] = arg;
 		used++;
 		arglist = arglist->rest;
-		free(arg);
 	}
 	//add in terminating NULL
 	if(capacity == used){
