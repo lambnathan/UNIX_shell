@@ -12,13 +12,16 @@
 #include "shell_builtins.h"
 #include "interpreter.h"
 
+//check if entered command was one of the builtins
 void check_exit(char** command_args, int *status);
 void check_history(char** command_args, int* status);
 void check_echo(char** command_args, int* status);
 void check_cd(char** command_args, int* status);
 void check_pwd(char** command_args, int* status);
 
-char** get_command_args(char* command, struct ast_argument_list *arglist);
+char** get_command_args(char* command, struct ast_argument_list *arglist); //gets the arguemnts for the command
+
+void check_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
 
 int main(int argc, char *argv[]){
 	unsigned int uid = getuid();
@@ -108,7 +111,7 @@ int main(int argc, char *argv[]){
 		char** command_args = get_command_args(command, statements->first->pipeline->first->arglist);
 
 		//CHECK ALIAS TABLE
-		
+		check_aliases(table, command_args);
 
 		//check for all of the builtin commands
 		//if a command is matched, it is executed inside the respectvie function, and then returns
@@ -219,4 +222,22 @@ char** get_command_args(char* command, struct ast_argument_list *arglist){
 	}
 	arr[used] = NULL;
 	return arr;
+}
+
+/*
+ *check if the first argument is aliased to a command, and if so, replace it with the actual command
+*/
+void check_aliases(struct alias_table *table, char** command_args){
+	if(table->used == 0){//no aliases have been entered
+		return;
+	}
+	else{
+		for(int i = 0; i < table->used; i++){
+			if(strcmp(table->name[i], command_args[0]) == 0){
+				free(command_args[i]);
+				command_args[i] = table->value[i];
+				return;
+			}
+		}
+	}
 }
