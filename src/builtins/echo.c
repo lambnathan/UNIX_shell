@@ -12,7 +12,12 @@ static int echo_builtin(struct interpreter_state *state,
     CHECK(argv && argv[0]);
 
     for(int i = 1; argv[i] != NULL; i++){
-        printf("%s ", argv[i]);
+        if(argv[i+1] == NULL){ //if on last arg, dont print space at end
+            printf("%s", argv[i]);
+        }
+        else{
+            printf("%s ", argv[i]);
+        }
     }
     printf("\n");
     fflush(error_fp);

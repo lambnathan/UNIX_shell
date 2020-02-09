@@ -69,10 +69,8 @@ int main(int argc, char *argv[]){
 		}
 		else if(r == 1){//expansion took place
 			printf("%s\n", output);
-			add_history(line);
-			strcpy(line, output);
-			free(output);
-			//line = output; //set line = output, and then will rin through that command below
+			free(line);
+			line = output; //free lines memory then reassign line's memory address to outputs
 		}
 		else if(r == -1){//error in expansion
 			fprintf(stderr, "There was an error in expansion: %s\n", output);
@@ -103,8 +101,7 @@ int main(int argc, char *argv[]){
 		check_pwd(statements, &good);
 
 		ast_statement_list_free(statements);
-		free(line);
-		free(output);
+		free(line); //by freeing line, we are also freeing output in the case of history expansion
 		free(prompt);
 	}
 	//free memory before exiting

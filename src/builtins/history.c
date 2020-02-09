@@ -24,7 +24,7 @@ static int history_builtin(struct interpreter_state *state,
     the_list = history_list();
     if(the_list){
         for(int i = 0; the_list[i]; i++){
-            printf("%s %i\n", the_list[i]->line, i + 1);
+            printf("%i %s\n", i + 1, the_list[i]->line);
         }
     }
     fflush(error_fp);

@@ -26,6 +26,9 @@ static int cd_builtin(struct interpreter_state *state,
         }
         else{
             int result = chdir(argv[1]);
+            if(result != 0){
+                fprintf(error_fp, "%s: not a directory\n", argv[0]);
+            }
             return result;
         }
     }
