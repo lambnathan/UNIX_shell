@@ -1,4 +1,3 @@
-#include "error.h"
 #include <unistd.h>
 #include <stdio.h>
 #include <pwd.h>
@@ -7,15 +6,17 @@
 #include <readline/history.h>
 #include <readline/readline.h>
 
+#include "alias.h"
+#include "error.h"
 #include "parser.h"
 #include "shell_builtins.h"
 #include "interpreter.h"
 
-void check_exit(struct ast_statement_list *statements, int *status);
-void check_history(struct ast_statement_list *statements, int* status);
-void check_echo(struct ast_statement_list *statements, int* status);
-void check_cd(struct ast_statement_list *statements, int* status);
-void check_pwd(struct ast_statement_list *statements, int* status);
+void check_exit(char** command_args, int *status);
+void check_history(char** command_args, int* status);
+void check_echo(char** command_args, int* status);
+void check_cd(char** command_args, int* status);
+void check_pwd(char** command_args, int* status);
 
 char** get_command_args(char* command, struct ast_argument_list *arglist);
 
@@ -28,6 +29,13 @@ int main(int argc, char *argv[]){
 	char* user_name = p->pw_name;
 	strcat(user_name, " ");
 	int good = 0; //good; no command has returned error yet (return value)
+
+	struct alias_table *table =  alias_table_new(); //create a new alias table
+	table->used = 0;
+	table->capacity = 2;
+	table->name = malloc(sizeof(char*) * table->capacity);
+	table->value = malloc(sizeof(char*) * table->capacity);
+
 
 	char* line;
 	using_history();
@@ -43,7 +51,7 @@ int main(int argc, char *argv[]){
 			strcat(prompt, frown);
 		}
 
-		line = readline(prompt);
+		line = readline(prompt); //prompt user
 		
 		if(line == (char*)NULL){
 			const char* const argv[] = {"exit", NULL}; //constant array of constant argument strings
@@ -62,6 +70,8 @@ int main(int argc, char *argv[]){
 			}
 		}
 
+		//per bash manual, history expansion is performed immediately after a complete 
+		//line is read, before it is broken into words
 		char *output = NULL;
 		int r = history_expand(line, &output);
 		if(r == 0){//no expansion took place
@@ -88,21 +98,30 @@ int main(int argc, char *argv[]){
 			continue;
 		}
 		add_history(line);
-		
+
+		//parse input and get arguments
 		struct ast_statement_list *statements = parse_input(line);
-		//struct ast_argument_list *arglist = statements->first->pipeline->first->arglist;
+		int size = statements->first->pipeline->first->arglist->first->parts->first->string->size;
+		char* command = malloc(sizeof(char) * (size + 1));
+		memcpy(command, statements->first->pipeline->first->arglist->first->parts->first->string->data, size);
+		command[size] = '\0';
+		char** command_args = get_command_args(command, statements->first->pipeline->first->arglist);
+
+		//CHECK ALIAS TABLE
+		
 
 		//check for all of the builtin commands
 		//if a command is matched, it is executed inside the respectvie function, and then returns
-		check_exit(statements, &good);
-		check_history(statements, &good);
-		check_echo(statements, &good);
-		check_cd(statements, &good);
-		check_pwd(statements, &good);
+		check_exit(command_args, &good);
+		check_history(command_args, &good);
+		check_echo(command_args, &good);
+		check_cd(command_args, &good);
+		check_pwd(command_args, &good);
 
 		ast_statement_list_free(statements);
 		free(line); //by freeing line, we are also freeing output in the case of history expansion
 		free(prompt);
+		free(command_args);
 	}
 	//free memory before exiting
 	free(user_name);
@@ -111,136 +130,63 @@ int main(int argc, char *argv[]){
 }
 
 //check if the command was "exit"
-void check_exit(struct ast_statement_list *statements, int* status){
-	//printf("in check exit\n");
-	int length_of_arg = statements->first->pipeline->first->arglist->first->parts->first->string->size;
-	if(length_of_arg != 4){
+void check_exit(char** command_args, int* status){
+	if(strcmp(command_args[0], "exit") == 0){
+		struct builtin_command *cmd = builtin_command_get("exit");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
+		*status = retrn;
+	}
+	else{
 		return;
 	}
-	char subbuff[5];
-	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 4);
-	subbuff[4] = '\0';
-	char test[] = "exit";
-	int i;
-	for(i = 0; i < 4; i++){
-		if(subbuff[i] != test[i]){
-			break;
-		}
-	}
-	if(i == 4){
-		//printf("you want to exit\n");
-		char** args = get_command_args("exit", statements->first->pipeline->first->arglist);
-		struct builtin_command *cmd = builtin_command_get("exit");
-		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
-		*status = retrn;
-
-		free(args);
-	}
-	return;
 }
 
 //check if the command was history
-void check_history(struct ast_statement_list *statements, int* status){
-	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
-	if(length_of_args != 7){ //invalid lenth to be history command
+void check_history(char** command_args, int* status){
+	if(strcmp(command_args[0], "history") == 0){
+		struct builtin_command *cmd = builtin_command_get("history");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
+		*status = retrn;
+	}
+	else{
 		return;
 	}
-	char subbuff[8];
-	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 7);
-	subbuff[7] = '\0';
-	char test[] = "history";
-	int i;
-	for(i = 0; i < 7; i++){
-		if(subbuff[i] != test[i]){//command not equal to history
-			break;
-		}
-	}
-	if(i == 7){
-		char** args = get_command_args("history", statements->first->pipeline->first->arglist);
-		struct builtin_command *cmd = builtin_command_get("history");
-		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
-		*status = retrn;
-		free(args);
-	}
-	return;
 }
 
 //check if the echo command was given
-void check_echo(struct ast_statement_list *statements, int* status){
-	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
-	if(length_of_args != 4){
+void check_echo(char** command_args, int* status){
+	if(strcmp(command_args[0], "echo") == 0){
+		struct builtin_command *cmd = builtin_command_get("echo");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
+		*status = retrn;
+	}
+	else{
 		return;
 	}
-	char subbuff[5];
-	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 4);
-	subbuff[4] = '\0';
-	char test[] = "echo";
-	int i;
-	for(i = 0; i < 4; i++){
-		if(subbuff[i] != test[i]){
-			break;
-		}
-	}
-	if(i == 4){
-		char** args = get_command_args("echo", statements->first->pipeline->first->arglist);
-		struct builtin_command *cmd = builtin_command_get("echo");
-		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
-		*status = retrn;
-		free(args);
-	}
-	return;
 }
 
 //check if the cd command was given
-void check_cd(struct ast_statement_list * statements, int* status){
-	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
-	if(length_of_args != 2){
+void check_cd(char** command_args, int* status){
+	if(strcmp(command_args[0], "cd") == 0){
+		struct builtin_command *cmd = builtin_command_get("cd");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
+		*status = retrn;
+	}
+	else{
 		return;
 	}
-	char subbuff[3];
-	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 2);
-	subbuff[2] = '\0';
-	char test[] = "cd";
-	int i;
-	for(i = 0; i < 2; i++){
-		if(subbuff[i] != test[i]){
-			break;
-		}
-	}
-	if(i == 2){
-		char** args = get_command_args("cd", statements->first->pipeline->first->arglist);
-		struct builtin_command *cmd = builtin_command_get("cd");
-		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
-		*status = retrn;
-		free(args);
-	}
-	return;
 }
 
 //check if the user entered the pwd command
-void check_pwd(struct ast_statement_list *statements, int* status){
-	int length_of_args = statements->first->pipeline->first->arglist->first->parts->first->string->size;
-	if(length_of_args != 3){
+void check_pwd(char** command_args, int* status){
+	if(strcmp(command_args[0], "pwd") == 0){
+		struct builtin_command *cmd = builtin_command_get("pwd");
+		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
+		*status = retrn;
+	}
+	else{
 		return;
 	}
-	char subbuff[4];
-	memcpy(subbuff, statements->first->pipeline->first->arglist->first->parts->first->string->data, 3);
-	subbuff[3] = '\0';
-	char test[] = "pwd";
-	int i;
-	for(i = 0; i < 3; i++){
-		if(subbuff[i] != test[i]){
-			break;
-		}
-	}
-	if(i == 3){
-		char** args = get_command_args("pwd", statements->first->pipeline->first->arglist);
-		struct builtin_command *cmd = builtin_command_get("pwd");
-		int retrn = cmd->function(interpreter_new(true), (const char* const*)args, 0, 1, 2);
-		*status = retrn;
-		free(args);
-	}
-	return;
 }
 
 

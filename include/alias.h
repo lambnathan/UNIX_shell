@@ -1,7 +1,12 @@
 #ifndef _ALIAS_H
 #define _ALIAS_H
 
-struct alias_table;
+struct alias_table{
+	char** name; //array of the old strings
+	char ** value; //array of the new strings, with order relative to their old counterparts
+	int used; //keeps track of number of aliases
+	int capacity; //keeps track of available memory slots in table
+};
 
 struct alias_table *alias_table_new(void);
 void alias_table_free(struct alias_table *table);

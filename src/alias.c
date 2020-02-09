@@ -1,10 +1,6 @@
 #include <stddef.h>
-
+#include "alias.h"
 #include "error.h"
-
-struct alias_table {
-	/* You choose what goes here! */
-};
 
 struct alias_table *alias_table_new(void)
 {
