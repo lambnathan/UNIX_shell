@@ -15,4 +15,7 @@ void alias_set(struct alias_table *table, const char *name,
 void alias_unset(struct alias_table *table, const char *name);
 const char *alias_get(struct alias_table *table, const char *name);
 
+int alias_builtin(char** command_args, struct alias_table *table);
+void print_all_aliases(struct alias_table *table);
+
 #endif /* _ALIAS_H */

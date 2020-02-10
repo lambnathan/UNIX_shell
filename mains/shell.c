@@ -19,9 +19,11 @@ void check_echo(char** command_args, int* status);
 void check_cd(char** command_args, int* status);
 void check_pwd(char** command_args, int* status);
 
+void check_alias(char** command_args, struct alias_table *table, int* status);//handled slightly differently than rest
+
 char** get_command_args(char* command, struct ast_argument_list *arglist); //gets the arguemnts for the command
 
-void check_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
+void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
 
 int main(int argc, char *argv[]){
 	unsigned int uid = getuid();
@@ -111,7 +113,7 @@ int main(int argc, char *argv[]){
 		char** command_args = get_command_args(command, statements->first->pipeline->first->arglist);
 
 		//CHECK ALIAS TABLE
-		check_aliases(table, command_args);
+		search_aliases(table, command_args);
 
 		//check for all of the builtin commands
 		//if a command is matched, it is executed inside the respectvie function, and then returns
@@ -120,6 +122,7 @@ int main(int argc, char *argv[]){
 		check_echo(command_args, &good);
 		check_cd(command_args, &good);
 		check_pwd(command_args, &good);
+		check_alias(command_args, table, &good);
 
 		ast_statement_list_free(statements);
 		free(line); //by freeing line, we are also freeing output in the case of history expansion
@@ -192,6 +195,17 @@ void check_pwd(char** command_args, int* status){
 	}
 }
 
+//check if the user entered the alias or unalias command
+void check_alias(char** command_args, struct alias_table *table, int* status){
+	if(strcmp(command_args[0], "alias") == 0 || strcmp(command_args[0], "unalias") == 0){
+		int retrn = alias_builtin(command_args, table);
+		*status = retrn;
+	}
+	else{
+		return;
+	}
+}
+
 
 /*
  *function that takes in the command typed and creates a null terminated
@@ -227,15 +241,15 @@ char** get_command_args(char* command, struct ast_argument_list *arglist){
 /*
  *check if the first argument is aliased to a command, and if so, replace it with the actual command
 */
-void check_aliases(struct alias_table *table, char** command_args){
+void search_aliases(struct alias_table *table, char** command_args){
 	if(table->used == 0){//no aliases have been entered
 		return;
 	}
 	else{
 		for(int i = 0; i < table->used; i++){
 			if(strcmp(table->name[i], command_args[0]) == 0){
-				free(command_args[i]);
-				command_args[i] = table->value[i];
+				free(command_args[0]);
+				command_args[0] = table->value[i];
 				return;
 			}
 		}
