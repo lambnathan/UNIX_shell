@@ -38,14 +38,28 @@ void alias_set(struct alias_table *table, const char *name,
 	table->used++;
 }
 
-void alias_unset(struct alias_table *table, const char *name)
-{
-	TODO("Unset an entry.");
+//remove an alias
+void alias_unset(struct alias_table *table, const char *name){
+	//find index of alias to remove
+	int i = 0;
+	for(i = 0; strcmp(table->name[i], name) != 0; i++){}
+	free(table->name[i]);
+	free(table->value[i]);
+	for(int j = i; j < table->used - 1; j++){//move elements to fill in the space
+		table->name[j] = table->name[j+1];
+		table->value[j] = table->value[j+1];
+	}
+	table->used--;
 }
 
 const char *alias_get(struct alias_table *table, const char *name)
 {
-	TODO("Get an entry.");
+	for(int i = 0; i < table->used; i++){
+		if(strcmp(table->name[i], name) == 0){
+			return table->value[i];
+		}
+	}
+	return NULL;
 }
 
 
@@ -64,6 +78,11 @@ int alias_builtin(char** command_args, struct alias_table *table){
 			char name[name_size];
 			memcpy(name, alias, j);
 			name[j] = '\0';
+
+			if(alias_get(table, name) != NULL){//alias already exists, so have to remove previous one first
+				alias_unset(table, name);
+			}
+
 			int k;
 			for(k = j + 1; alias[k] != '\0'; k++){}
 			int replacement_size = k-j;
@@ -73,6 +92,20 @@ int alias_builtin(char** command_args, struct alias_table *table){
 			alias_set(table, name, replacement);
 			//free(name);
 			//free(replacement);
+		}
+	}
+	else if(strcmp(command_args[0], "unalias") == 0){
+		if(command_args[1] != NULL){
+			for(int i = 1; command_args[i] != NULL; i++){
+				if(alias_get(table, command_args[i]) != NULL){
+					alias_unset(table, command_args[i]);
+				}
+			}
+			return 0;
+		}
+		else{ //not enough arguments
+			printf("usage: unalias <alias...>\n");
+			return 1;
 		}
 	}
 	return 0;

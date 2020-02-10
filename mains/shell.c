@@ -246,12 +246,19 @@ void search_aliases(struct alias_table *table, char** command_args){
 		return;
 	}
 	else{
-		for(int i = 0; i < table->used; i++){
-			if(strcmp(table->name[i], command_args[0]) == 0){
-				free(command_args[0]);
-				command_args[0] = table->value[i];
-				return;
-			}
+		const char* to_replace = alias_get(table, command_args[0]);
+		if(to_replace != NULL){ //alias for user input does exist
+			free(command_args[0]);
+			command_args[0] = (char*)to_replace;
+			return;
 		}
+
+		// for(int i = 0; i < table->used; i++){
+		// 	if(strcmp(table->name[i], command_args[0]) == 0){
+		// 		free(command_args[0]);
+		// 		command_args[0] = table->value[i];
+		// 		return;
+		// 	}
+		// }
 	}
 }
