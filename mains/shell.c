@@ -11,6 +11,7 @@
 #include "parser.h"
 #include "shell_builtins.h"
 #include "interpreter.h"
+#include "vars.h"
 
 //check if entered command was one of the builtins
 void check_exit(char** command_args, int *status);
@@ -24,6 +25,7 @@ void check_alias(char** command_args, struct alias_table *table, int* status);//
 char** get_command_args(char* command, struct ast_argument_list *arglist); //gets the arguemnts for the command
 
 void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
+void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist);
 
 int main(int argc, char *argv[]){
 	unsigned int uid = getuid();
@@ -40,6 +42,13 @@ int main(int argc, char *argv[]){
 	table->capacity = 2;
 	table->name = malloc(sizeof(char*) * table->capacity);
 	table->value = malloc(sizeof(char*) * table->capacity);
+
+	//create new variable table
+	struct vars_table *var_table = vars_table_new();
+	var_table->used = 0;
+	var_table->capacity = 2;
+	var_table->name = malloc(sizeof(char*) * var_table->capacity);
+	var_table->value = malloc(sizeof(char*) * var_table->capacity);
 
 
 	char* line;
@@ -106,14 +115,27 @@ int main(int argc, char *argv[]){
 
 		//parse input and get arguments
 		struct ast_statement_list *statements = parse_input(line);
+		if(statements->first->pipeline->first->assignments != NULL && statements->first->pipeline->first->arglist == NULL 
+				&& statements->first->pipeline->first->input_file == NULL && statements->first->pipeline->first->output_file == NULL
+				&& statements->first->pipeline->first->append_file == NULL){
+			//do variable assignment
+			assign_vars(var_table, statements->first->pipeline->first->assignments);
+			free(line);
+			free(prompt);
+			free(output);
+			continue;
+		}
 		int size = statements->first->pipeline->first->arglist->first->parts->first->string->size;
 		char* command = malloc(sizeof(char) * (size + 1));
 		memcpy(command, statements->first->pipeline->first->arglist->first->parts->first->string->data, size);
 		command[size] = '\0';
 		char** command_args = get_command_args(command, statements->first->pipeline->first->arglist);
-
+		
 		//CHECK ALIAS TABLE
 		search_aliases(table, command_args);
+
+		//test print all the vars
+		print_all_vars(var_table);
 
 		//check for all of the builtin commands
 		//if a command is matched, it is executed inside the respectvie function, and then returns
@@ -261,4 +283,50 @@ void search_aliases(struct alias_table *table, char** command_args){
 		// 	}
 		// }
 	}
+}
+
+//aassign variables in shell
+void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist){
+	int name_size = aslist->first->name->size;
+	char* name = malloc(sizeof(char) * (name_size + 1));
+	memcpy(name, aslist->first->name->data, name_size);
+	name[name_size] = '\0';
+
+	//check if var assined already exists. if it does, remove it first
+	if(vars_get(var_table, name) != NULL){//var already exists, so have to remove previous one first
+		vars_unset(var_table, name);
+	}
+
+	int val_size = aslist->first->value->parts->first->string->size;
+	char* value = malloc(sizeof(char) * (val_size + 1));
+	memcpy(value, aslist->first->value->parts->first->string->data, val_size);
+	value[val_size] = '\0';
+	vars_set(var_table, name, value);
+
+
+
+	// if(command_args[1] == NULL){ //only 1 command
+	// 		for(int i = 0; command_args[0][i] != '\0'; i++){ //check if the command is variable assignment
+	// 			if(command_args[0][i] == '='){
+	// 				//parse the assignment
+	// 				int name_size = i + 1;
+	// 				char name[name_size];
+	// 				memcpy(name, command_args[0], i);
+	// 				name[i] = '\0';
+
+	// 				//check if var assined already exists. if it does, remove it first
+	// 				if(vars_get(var_table, name) != NULL){//var already exists, so have to remove previous one first
+	// 					vars_unset(var_table, name);
+	// 				}
+
+	// 				int k;
+	// 				for(k = i + 1; command_args[0][k] != '\0'; k++){}
+	// 				int replacement_size = k-i;
+	// 				char replacement[replacement_size];
+	// 				memcpy(replacement, &command_args[i+1], k-i-1);
+	// 				replacement[k-i-1] = '\0';
+	// 				vars_set(var_table, name, replacement);
+	// 			}
+	// 		}
+	// 	}
 }
