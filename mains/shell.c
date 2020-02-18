@@ -22,7 +22,7 @@ void check_pwd(char** command_args, int* status);
 
 void check_alias(char** command_args, struct alias_table *table, int* status);//handled slightly differently than rest
 
-char** get_command_args(char* command, struct ast_argument_list *arglist); //gets the arguemnts for the command
+char** get_command_args(char* command, struct ast_argument_list *arglist, struct vars_table *var_table); //gets the arguemnts for the command
 
 void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
 void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist);
@@ -129,13 +129,13 @@ int main(int argc, char *argv[]){
 		char* command = malloc(sizeof(char) * (size + 1));
 		memcpy(command, statements->first->pipeline->first->arglist->first->parts->first->string->data, size);
 		command[size] = '\0';
-		char** command_args = get_command_args(command, statements->first->pipeline->first->arglist);
+		char** command_args = get_command_args(command, statements->first->pipeline->first->arglist, var_table);
 		
 		//CHECK ALIAS TABLE
 		search_aliases(table, command_args);
 
 		//test print all the vars
-		print_all_vars(var_table);
+		//print_all_vars(var_table);
 
 		//check for all of the builtin commands
 		//if a command is matched, it is executed inside the respectvie function, and then returns
@@ -232,24 +232,89 @@ void check_alias(char** command_args, struct alias_table *table, int* status){
 /*
  *function that takes in the command typed and creates a null terminated
    array of strings of all of the arguemnts (including the command itself)
+   it also replaces any of the arguements with a $ infront of them with their correspsonding shell 
+   parameters or variables. if one doesn't exist, a blank string is used instead
 */
-char** get_command_args(char* command, struct ast_argument_list *arglist){
+char** get_command_args(char* command, struct ast_argument_list *arglist, struct vars_table *var_table){
 	int capacity = 2;
 	int used = 1;
 	char **arr = malloc(sizeof(char*)*capacity);
 	arr[0] = command;
+	char empty_string[1] = "";
 	while(arglist->rest != NULL){
-		int size = arglist->rest->first->parts->first->string->size;
-		char* arg  = malloc(sizeof(char) * (size + 1));
-		memcpy(arg, arglist->rest->first->parts->first->string->data, size);
-		arg[size] = '\0';
-		if(capacity == used){
-			capacity *= 2;
-			arr = realloc(arr, sizeof(char*) * capacity);
+		if(arglist->rest->first->parts->rest != NULL){ //we have expansion with {}
+			int param_size = arglist->rest->first->parts->first->parameter->size;
+			char* arg  = malloc(sizeof(char) * (param_size + 1));
+			memcpy(arg, arglist->rest->first->parts->first->parameter->data, param_size);
+			arg[param_size] = '\0';
+			const char* to_replace = vars_get(var_table, arg); //check if it needs to be replaced
+			char* actual = (char*)to_replace;
+			char* final_arg;
+			if(capacity == used){
+				capacity *= 2;
+				arr = realloc(arr, sizeof(char*) * capacity);
+			}
+			if(to_replace == NULL){ //only allocate space for the part
+				int part_size = arglist->rest->first->parts->rest->first->string->size;
+				final_arg = malloc(sizeof(char) * (part_size + 1));
+				memcpy(final_arg, arglist->rest->first->parts->rest->first->string->data, part_size);
+				final_arg[part_size] = '\0';
+				arr[used] = final_arg;
+				used++;
+				arglist = arglist->rest;
+			}
+			else{
+				//get size of replacement
+				int replace_size;
+				for(replace_size = 0; actual[replace_size] != '\0'; replace_size++){}
+				int combined_size = replace_size + arglist->rest->first->parts->rest->first->string->size;
+				final_arg = malloc(sizeof(char) * (combined_size + 1));
+				memcpy(final_arg, actual, replace_size);
+				strcat(final_arg, arglist->rest->first->parts->rest->first->string->data);
+				final_arg[combined_size] = '\0';
+				arr[used] = final_arg;
+				used++;
+				arglist = arglist->rest;
+			}
 		}
-		arr[used] = arg;
-		used++;
-		arglist = arglist->rest;
+		else if(arglist->rest->first->parts->first->parameter != NULL){ //shell parameter
+			int param_size = arglist->rest->first->parts->first->parameter->size;
+			char* arg  = malloc(sizeof(char) * (param_size + 1));
+			memcpy(arg, arglist->rest->first->parts->first->parameter->data, param_size);
+			arg[param_size] = '\0';
+			if(capacity == used){
+				capacity *= 2;
+				arr = realloc(arr, sizeof(char*) * capacity);
+			}
+			//should first be replaced by shell local parameter
+			//if none found, then replaced by environment variable
+			//none for either, empty string
+			const char* to_replace = vars_get(var_table, arg);
+			if(to_replace == NULL){ //replace with empty string
+				arr[used] = empty_string;
+				used++;
+				arglist = arglist->rest;
+			}
+			else{
+				arr[used] = (char*)to_replace;
+				used++;
+				arglist = arglist->rest;
+			}
+
+		}
+		else{ //normal arguments
+			int size = arglist->rest->first->parts->first->string->size;
+			char* arg  = malloc(sizeof(char) * (size + 1));
+			memcpy(arg, arglist->rest->first->parts->first->string->data, size);
+			arg[size] = '\0';
+			if(capacity == used){
+				capacity *= 2;
+				arr = realloc(arr, sizeof(char*) * capacity);
+			}
+			arr[used] = arg;
+			used++;
+			arglist = arglist->rest;
+		}
 	}
 	//add in terminating NULL
 	if(capacity == used){
