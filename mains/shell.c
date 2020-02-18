@@ -2,6 +2,7 @@
 #include <stdio.h>
 #include <pwd.h>
 #include <stdlib.h>
+#include <sys/wait.h>
 
 #include <readline/history.h>
 #include <readline/readline.h>
@@ -14,18 +15,18 @@
 #include "vars.h"
 
 //check if entered command was one of the builtins
-void check_exit(char** command_args, int *status);
-void check_history(char** command_args, int* status);
-void check_echo(char** command_args, int* status);
-void check_cd(char** command_args, int* status);
-void check_pwd(char** command_args, int* status);
+void check_exit(char** command_args, int *status, int *executed);
+void check_history(char** command_args, int* status, int *executed);
+void check_echo(char** command_args, int* status, int* executed);
+void check_cd(char** command_args, int* status, int *executed);
+void check_pwd(char** command_args, int* status, int *executed);
 
-void check_alias(char** command_args, struct alias_table *table, int* status);//handled slightly differently than rest
+void check_alias(char** command_args, struct alias_table *table, int* status, int *executed);//handled slightly differently than rest
 
 char** get_command_args(char* command, struct ast_argument_list *arglist, struct vars_table *var_table); //gets the arguemnts for the command
 
 void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
-void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist);
+void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist, int* executed);
 
 int main(int argc, char *argv[]){
 	unsigned int uid = getuid();
@@ -36,6 +37,7 @@ int main(int argc, char *argv[]){
 	char* user_name = p->pw_name;
 	strcat(user_name, " ");
 	int good = 0; //good; no command has returned error yet (return value)
+	int executed = 0; //keeps  track if a builtin has executed a command. if no builtins ran, call external commands
 
 	struct alias_table *table =  alias_table_new(); //create a new alias table
 	table->used = 0;
@@ -119,7 +121,7 @@ int main(int argc, char *argv[]){
 				&& statements->first->pipeline->first->input_file == NULL && statements->first->pipeline->first->output_file == NULL
 				&& statements->first->pipeline->first->append_file == NULL){
 			//do variable assignment
-			assign_vars(var_table, statements->first->pipeline->first->assignments);
+			assign_vars(var_table, statements->first->pipeline->first->assignments, &executed);
 			free(line);
 			free(prompt);
 			free(output);
@@ -139,13 +141,43 @@ int main(int argc, char *argv[]){
 
 		//check for all of the builtin commands
 		//if a command is matched, it is executed inside the respectvie function, and then returns
-		check_exit(command_args, &good);
-		check_history(command_args, &good);
-		check_echo(command_args, &good);
-		check_cd(command_args, &good);
-		check_pwd(command_args, &good);
-		check_alias(command_args, table, &good);
+		check_exit(command_args, &good, &executed);
+		check_history(command_args, &good, &executed);
+		check_echo(command_args, &good, &executed);
+		check_cd(command_args, &good, &executed);
+		check_pwd(command_args, &good, &executed);
+		check_alias(command_args, table, &good, &executed);
 
+		if(executed != 1){ //none of the builtins were executed, so use external commands
+			//call fork(), the execve to execute the command in the child process
+			pid_t cpid;
+			int wstatus;
+			printf("wstatus before: %i\n", wstatus);
+			cpid = fork();
+			if(cpid == -1){ //error
+				printf("Error\n");
+				good = 1;
+			}
+			else if(cpid == 0){ //code executed by the child
+				int return_status = execvp(command_args[0], command_args);
+				printf("return status: %i\n", return_status);
+				exit(return_status); //terminate child process
+			}
+			else{ //code executed by parent; should wait until the child is done
+				int dead_child = wait(&wstatus);
+				printf("wstatus: %i\n", wstatus);
+				if(dead_child == -1){//error has occured
+					good = -1;
+				}
+				//CHECK EXIT STATUS OF WSTATUS
+				if(wstatus != 0){
+					printf("%s: no such file or directory\n", command_args[0]);
+				}
+				good = wstatus;
+			}
+		}
+
+		executed = 0;
 		ast_statement_list_free(statements);
 		free(line); //by freeing line, we are also freeing output in the case of history expansion
 		free(prompt);
@@ -158,11 +190,12 @@ int main(int argc, char *argv[]){
 }
 
 //check if the command was "exit"
-void check_exit(char** command_args, int* status){
+void check_exit(char** command_args, int* status, int* executed){
 	if(strcmp(command_args[0], "exit") == 0){
 		struct builtin_command *cmd = builtin_command_get("exit");
 		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
 		*status = retrn;
+		*executed = 1;
 	}
 	else{
 		return;
@@ -170,11 +203,12 @@ void check_exit(char** command_args, int* status){
 }
 
 //check if the command was history
-void check_history(char** command_args, int* status){
+void check_history(char** command_args, int* status, int* executed){
 	if(strcmp(command_args[0], "history") == 0){
 		struct builtin_command *cmd = builtin_command_get("history");
 		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
 		*status = retrn;
+		*executed = 1;
 	}
 	else{
 		return;
@@ -182,11 +216,12 @@ void check_history(char** command_args, int* status){
 }
 
 //check if the echo command was given
-void check_echo(char** command_args, int* status){
+void check_echo(char** command_args, int* status, int* executed){
 	if(strcmp(command_args[0], "echo") == 0){
 		struct builtin_command *cmd = builtin_command_get("echo");
 		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
 		*status = retrn;
+		*executed = 1;
 	}
 	else{
 		return;
@@ -194,11 +229,12 @@ void check_echo(char** command_args, int* status){
 }
 
 //check if the cd command was given
-void check_cd(char** command_args, int* status){
+void check_cd(char** command_args, int* status, int* executed){
 	if(strcmp(command_args[0], "cd") == 0){
 		struct builtin_command *cmd = builtin_command_get("cd");
 		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
 		*status = retrn;
+		*executed = 1;
 	}
 	else{
 		return;
@@ -206,11 +242,12 @@ void check_cd(char** command_args, int* status){
 }
 
 //check if the user entered the pwd command
-void check_pwd(char** command_args, int* status){
+void check_pwd(char** command_args, int* status, int* executed){
 	if(strcmp(command_args[0], "pwd") == 0){
 		struct builtin_command *cmd = builtin_command_get("pwd");
 		int retrn = cmd->function(interpreter_new(true), (const char* const*)command_args, 0, 1, 2);
 		*status = retrn;
+		*executed = 1;
 	}
 	else{
 		return;
@@ -218,10 +255,11 @@ void check_pwd(char** command_args, int* status){
 }
 
 //check if the user entered the alias or unalias command
-void check_alias(char** command_args, struct alias_table *table, int* status){
+void check_alias(char** command_args, struct alias_table *table, int* status, int* executed){
 	if(strcmp(command_args[0], "alias") == 0 || strcmp(command_args[0], "unalias") == 0){
 		int retrn = alias_builtin(command_args, table);
 		*status = retrn;
+		*executed = 1;
 	}
 	else{
 		return;
@@ -351,7 +389,7 @@ void search_aliases(struct alias_table *table, char** command_args){
 }
 
 //aassign variables in shell
-void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist){
+void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist, int* executed){
 	int name_size = aslist->first->name->size;
 	char* name = malloc(sizeof(char) * (name_size + 1));
 	memcpy(name, aslist->first->name->data, name_size);
@@ -367,31 +405,5 @@ void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslis
 	memcpy(value, aslist->first->value->parts->first->string->data, val_size);
 	value[val_size] = '\0';
 	vars_set(var_table, name, value);
-
-
-
-	// if(command_args[1] == NULL){ //only 1 command
-	// 		for(int i = 0; command_args[0][i] != '\0'; i++){ //check if the command is variable assignment
-	// 			if(command_args[0][i] == '='){
-	// 				//parse the assignment
-	// 				int name_size = i + 1;
-	// 				char name[name_size];
-	// 				memcpy(name, command_args[0], i);
-	// 				name[i] = '\0';
-
-	// 				//check if var assined already exists. if it does, remove it first
-	// 				if(vars_get(var_table, name) != NULL){//var already exists, so have to remove previous one first
-	// 					vars_unset(var_table, name);
-	// 				}
-
-	// 				int k;
-	// 				for(k = i + 1; command_args[0][k] != '\0'; k++){}
-	// 				int replacement_size = k-i;
-	// 				char replacement[replacement_size];
-	// 				memcpy(replacement, &command_args[i+1], k-i-1);
-	// 				replacement[k-i-1] = '\0';
-	// 				vars_set(var_table, name, replacement);
-	// 			}
-	// 		}
-	// 	}
+	*executed = 1;
 }
