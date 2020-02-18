@@ -1,3 +1,4 @@
+#include <errno.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <pwd.h>
@@ -23,10 +24,10 @@ void check_pwd(char** command_args, int* status, int *executed);
 
 void check_alias(char** command_args, struct alias_table *table, int* status, int *executed);//handled slightly differently than rest
 
-char** get_command_args(char* command, struct ast_argument_list *arglist, struct vars_table *var_table); //gets the arguemnts for the command
+char** get_command_args(struct ast_argument_list *arglist, struct vars_table *var_table); //gets the arguemnts for the command
 
 void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
-void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist, int* executed);
+void assign_vars(struct vars_table *var_table, struct alias_table *table, struct ast_assignment_list *aslist);
 
 int main(int argc, char *argv[]){
 	unsigned int uid = getuid();
@@ -121,23 +122,25 @@ int main(int argc, char *argv[]){
 				&& statements->first->pipeline->first->input_file == NULL && statements->first->pipeline->first->output_file == NULL
 				&& statements->first->pipeline->first->append_file == NULL){
 			//do variable assignment
-			assign_vars(var_table, statements->first->pipeline->first->assignments, &executed);
+			assign_vars(var_table, table, statements->first->pipeline->first->assignments);
 			free(line);
 			free(prompt);
 			free(output);
+			good = 0;
 			continue;
 		}
-		int size = statements->first->pipeline->first->arglist->first->parts->first->string->size;
-		char* command = malloc(sizeof(char) * (size + 1));
-		memcpy(command, statements->first->pipeline->first->arglist->first->parts->first->string->data, size);
-		command[size] = '\0';
-		char** command_args = get_command_args(command, statements->first->pipeline->first->arglist, var_table);
+		// int size = statements->first->pipeline->first->arglist->first->parts->first->string->size;
+		// char* command = malloc(sizeof(char) * (size + 1));
+		// memcpy(command, statements->first->pipeline->first->arglist->first->parts->first->string->data, size);
+		// command[size] = '\0';
+		char** command_args = get_command_args(statements->first->pipeline->first->arglist, var_table);
 		
 		//CHECK ALIAS TABLE
 		search_aliases(table, command_args);
 
 		//test print all the vars
-		//print_all_vars(var_table);
+		// printf("VAR ASSIGNMENTS:\n");
+		// print_all_vars(var_table);
 
 		//check for all of the builtin commands
 		//if a command is matched, it is executed inside the respectvie function, and then returns
@@ -152,7 +155,6 @@ int main(int argc, char *argv[]){
 			//call fork(), the execve to execute the command in the child process
 			pid_t cpid;
 			int wstatus;
-			printf("wstatus before: %i\n", wstatus);
 			cpid = fork();
 			if(cpid == -1){ //error
 				printf("Error\n");
@@ -160,19 +162,20 @@ int main(int argc, char *argv[]){
 			}
 			else if(cpid == 0){ //code executed by the child
 				int return_status = execvp(command_args[0], command_args);
-				printf("return status: %i\n", return_status);
+				if(errno == EACCES){
+					printf("%s: permission denied\n", command_args[0]);
+				}
+				else{
+					printf("%s: no such file or directory\n", command_args[0]);
+				}
 				exit(return_status); //terminate child process
 			}
 			else{ //code executed by parent; should wait until the child is done
 				int dead_child = wait(&wstatus);
-				printf("wstatus: %i\n", wstatus);
 				if(dead_child == -1){//error has occured
 					good = -1;
 				}
 				//CHECK EXIT STATUS OF WSTATUS
-				if(wstatus != 0){
-					printf("%s: no such file or directory\n", command_args[0]);
-				}
 				good = wstatus;
 			}
 		}
@@ -273,17 +276,16 @@ void check_alias(char** command_args, struct alias_table *table, int* status, in
    it also replaces any of the arguements with a $ infront of them with their correspsonding shell 
    parameters or variables. if one doesn't exist, a blank string is used instead
 */
-char** get_command_args(char* command, struct ast_argument_list *arglist, struct vars_table *var_table){
+char** get_command_args(struct ast_argument_list *arglist, struct vars_table *var_table){
 	int capacity = 2;
-	int used = 1;
+	int used = 0;
 	char **arr = malloc(sizeof(char*)*capacity);
-	arr[0] = command;
 	char empty_string[1] = "";
-	while(arglist->rest != NULL){
-		if(arglist->rest->first->parts->rest != NULL){ //we have expansion with {}
-			int param_size = arglist->rest->first->parts->first->parameter->size;
+	while(arglist != NULL){
+		if(arglist->first->parts->rest != NULL){ //we have expansion with {}
+			int param_size = arglist->first->parts->first->parameter->size;
 			char* arg  = malloc(sizeof(char) * (param_size + 1));
-			memcpy(arg, arglist->rest->first->parts->first->parameter->data, param_size);
+			memcpy(arg, arglist->first->parts->first->parameter->data, param_size);
 			arg[param_size] = '\0';
 			const char* to_replace = vars_get(var_table, arg); //check if it needs to be replaced
 			char* actual = (char*)to_replace;
@@ -293,9 +295,9 @@ char** get_command_args(char* command, struct ast_argument_list *arglist, struct
 				arr = realloc(arr, sizeof(char*) * capacity);
 			}
 			if(to_replace == NULL){ //only allocate space for the part
-				int part_size = arglist->rest->first->parts->rest->first->string->size;
+				int part_size = arglist->first->parts->rest->first->string->size;
 				final_arg = malloc(sizeof(char) * (part_size + 1));
-				memcpy(final_arg, arglist->rest->first->parts->rest->first->string->data, part_size);
+				memcpy(final_arg, arglist->first->parts->rest->first->string->data, part_size);
 				final_arg[part_size] = '\0';
 				arr[used] = final_arg;
 				used++;
@@ -305,20 +307,20 @@ char** get_command_args(char* command, struct ast_argument_list *arglist, struct
 				//get size of replacement
 				int replace_size;
 				for(replace_size = 0; actual[replace_size] != '\0'; replace_size++){}
-				int combined_size = replace_size + arglist->rest->first->parts->rest->first->string->size;
+				int combined_size = replace_size + arglist->first->parts->rest->first->string->size;
 				final_arg = malloc(sizeof(char) * (combined_size + 1));
 				memcpy(final_arg, actual, replace_size);
-				strcat(final_arg, arglist->rest->first->parts->rest->first->string->data);
+				strcat(final_arg, arglist->first->parts->rest->first->string->data);
 				final_arg[combined_size] = '\0';
 				arr[used] = final_arg;
 				used++;
 				arglist = arglist->rest;
 			}
 		}
-		else if(arglist->rest->first->parts->first->parameter != NULL){ //shell parameter
-			int param_size = arglist->rest->first->parts->first->parameter->size;
+		else if(arglist->first->parts->first->parameter != NULL){ //shell parameter
+			int param_size = arglist->first->parts->first->parameter->size;
 			char* arg  = malloc(sizeof(char) * (param_size + 1));
-			memcpy(arg, arglist->rest->first->parts->first->parameter->data, param_size);
+			memcpy(arg, arglist->first->parts->first->parameter->data, param_size);
 			arg[param_size] = '\0';
 			if(capacity == used){
 				capacity *= 2;
@@ -341,9 +343,9 @@ char** get_command_args(char* command, struct ast_argument_list *arglist, struct
 
 		}
 		else{ //normal arguments
-			int size = arglist->rest->first->parts->first->string->size;
+			int size = arglist->first->parts->first->string->size;
 			char* arg  = malloc(sizeof(char) * (size + 1));
-			memcpy(arg, arglist->rest->first->parts->first->string->data, size);
+			memcpy(arg, arglist->first->parts->first->string->data, size);
 			arg[size] = '\0';
 			if(capacity == used){
 				capacity *= 2;
@@ -360,6 +362,7 @@ char** get_command_args(char* command, struct ast_argument_list *arglist, struct
 			arr = realloc(arr, sizeof(char*) * capacity);
 	}
 	arr[used] = NULL;
+
 	return arr;
 }
 
@@ -389,7 +392,7 @@ void search_aliases(struct alias_table *table, char** command_args){
 }
 
 //aassign variables in shell
-void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslist, int* executed){
+void assign_vars(struct vars_table *var_table, struct alias_table *table, struct ast_assignment_list *aslist){
 	int name_size = aslist->first->name->size;
 	char* name = malloc(sizeof(char) * (name_size + 1));
 	memcpy(name, aslist->first->name->data, name_size);
@@ -404,6 +407,12 @@ void assign_vars(struct vars_table *var_table, struct ast_assignment_list *aslis
 	char* value = malloc(sizeof(char) * (val_size + 1));
 	memcpy(value, aslist->first->value->parts->first->string->data, val_size);
 	value[val_size] = '\0';
-	vars_set(var_table, name, value);
-	*executed = 1;
+	//check if value to assign is an alias
+	const char* to_replace = alias_get(table, value);
+	if(to_replace != NULL){
+		vars_set(var_table, name, (char*)to_replace);
+	}
+	else{
+		vars_set(var_table, name, value);
+	}
 }
