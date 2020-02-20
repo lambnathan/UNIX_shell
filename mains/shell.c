@@ -274,7 +274,8 @@ void check_alias(char** command_args, struct alias_table *table, int* status, in
  *function that takes in the command typed and creates a null terminated
    array of strings of all of the arguemnts (including the command itself)
    it also replaces any of the arguements with a $ infront of them with their correspsonding shell 
-   parameters or variables. if one doesn't exist, a blank string is used instead
+   parameters or variables. if one doesn't exist in the shell it searches the environment.
+   // if one is not found in the environment, a blank string is used instead
 */
 char** get_command_args(struct ast_argument_list *arglist, struct vars_table *var_table){
 	int capacity = 2;
@@ -294,16 +295,7 @@ char** get_command_args(struct ast_argument_list *arglist, struct vars_table *va
 				capacity *= 2;
 				arr = realloc(arr, sizeof(char*) * capacity);
 			}
-			if(to_replace == NULL){ //only allocate space for the part
-				int part_size = arglist->first->parts->rest->first->string->size;
-				final_arg = malloc(sizeof(char) * (part_size + 1));
-				memcpy(final_arg, arglist->first->parts->rest->first->string->data, part_size);
-				final_arg[part_size] = '\0';
-				arr[used] = final_arg;
-				used++;
-				arglist = arglist->rest;
-			}
-			else{
+			if(to_replace == NULL){ //exists in the shell 
 				//get size of replacement
 				int replace_size;
 				for(replace_size = 0; actual[replace_size] != '\0'; replace_size++){}
@@ -312,6 +304,28 @@ char** get_command_args(struct ast_argument_list *arglist, struct vars_table *va
 				memcpy(final_arg, actual, replace_size);
 				strcat(final_arg, arglist->first->parts->rest->first->string->data);
 				final_arg[combined_size] = '\0';
+				arr[used] = final_arg;
+				used++;
+				arglist = arglist->rest;
+			}
+			else if(getenv(arg) != NULL){ //exists in the environment
+				char* env_param = getenv(arg);
+				int replace_size;
+				for(replace_size = 0; env_param[replace_size] != '\0'; replace_size++){}
+				int combined_size = replace_size + arglist->first->parts->rest->first->string->size;
+				final_arg = malloc(sizeof(char) * (combined_size + 1));
+				memcpy(final_arg, env_param, replace_size);
+				strcat(final_arg, arglist->first->parts->rest->first->string->data);
+				final_arg[combined_size] = '\0';
+				arr[used] = final_arg;
+				used++;
+				arglist = arglist->rest;
+			}
+			else{//doesn't exist in shell or env, so only do the part outside the brackets
+				int part_size = arglist->first->parts->rest->first->string->size;
+				final_arg = malloc(sizeof(char) * (part_size + 1));
+				memcpy(final_arg, arglist->first->parts->rest->first->string->data, part_size);
+				final_arg[part_size] = '\0';
 				arr[used] = final_arg;
 				used++;
 				arglist = arglist->rest;
@@ -330,13 +344,24 @@ char** get_command_args(struct ast_argument_list *arglist, struct vars_table *va
 			//if none found, then replaced by environment variable
 			//none for either, empty string
 			const char* to_replace = vars_get(var_table, arg);
-			if(to_replace == NULL){ //replace with empty string
-				arr[used] = empty_string;
+			if(to_replace != NULL){ //replace with empty string
+				arr[used] = (char*)to_replace;
+				used++;
+				arglist = arglist->rest;
+			}
+			else if(getenv(arg) != NULL){//it exists in the environment
+				char* env_arg = getenv(arg);
+				int i;
+				for(i = 0; env_arg[i] != '\0'; i++){}
+				char* replace = malloc(sizeof(char) * (i+1));
+				memcpy(replace, env_arg, i);
+				replace[i] = '\0';
+				arr[used] = replace;
 				used++;
 				arglist = arglist->rest;
 			}
 			else{
-				arr[used] = (char*)to_replace;
+				arr[used] = empty_string;
 				used++;
 				arglist = arglist->rest;
 			}
@@ -393,26 +418,65 @@ void search_aliases(struct alias_table *table, char** command_args){
 
 //aassign variables in shell
 void assign_vars(struct vars_table *var_table, struct alias_table *table, struct ast_assignment_list *aslist){
+	char empty_string[] = "";
 	int name_size = aslist->first->name->size;
 	char* name = malloc(sizeof(char) * (name_size + 1));
 	memcpy(name, aslist->first->name->data, name_size);
 	name[name_size] = '\0';
 
-	//check if var assined already exists. if it does, remove it first
+	//check if var assined already exists in shell. if it does, remove it first
 	if(vars_get(var_table, name) != NULL){//var already exists, so have to remove previous one first
 		vars_unset(var_table, name);
 	}
 
-	int val_size = aslist->first->value->parts->first->string->size;
-	char* value = malloc(sizeof(char) * (val_size + 1));
-	memcpy(value, aslist->first->value->parts->first->string->data, val_size);
-	value[val_size] = '\0';
+	int val_size;
+	char* value = NULL;
+	if( aslist->first->value->parts->first->string == NULL){//assignment from other parameter
+		val_size = aslist->first->value->parts->first->parameter->size;
+		value = malloc(sizeof(char) * (val_size + 1));
+		memcpy(value, aslist->first->value->parts->first->parameter->data, val_size);
+		//at this point, value holds the name of the parameter that still needs to be dereferenced
+		const char* new_value = vars_get(var_table, value);
+		if(new_value != NULL){ //paramter exists in shell environment
+			free(value);
+			int i;
+			for(i = 0; new_value[i] != '\0'; i++){}
+			value = malloc(sizeof(char) * (i+1));
+			memcpy(value, new_value, i);
+			value[i] = '\0';
+		}
+		else if(getenv(value) != NULL){ //var exists in the environment
+			new_value = getenv(value);
+			free(value);
+			int i;
+			for(i = 0; new_value[i] != '\0'; i++){}
+			value = malloc(sizeof(char) * (i+1));
+			memcpy(value, new_value, i);
+			value[i] = '\0';
+		}
+		else{
+			free(value);
+			value = empty_string;
+		}
+	}
+	else if(aslist->first->value->parts->first->parameter == NULL){//assignment like normal
+		val_size = aslist->first->value->parts->first->string->size;
+		value = malloc(sizeof(char) * (val_size + 1));
+		memcpy(value, aslist->first->value->parts->first->string->data, val_size);
+		value[val_size] = '\0';
+	}
 	//check if value to assign is an alias
 	const char* to_replace = alias_get(table, value);
 	if(to_replace != NULL){
 		vars_set(var_table, name, (char*)to_replace);
 	}
-	else{
-		vars_set(var_table, name, value);
+	else{//not an alias
+		//check if name is in the environment
+		if(getenv(name) != NULL){
+			setenv(name, value, 1); //update environment
+		}
+		else{
+			vars_set(var_table, name, value); //update local environment
+		}
 	}
 }
