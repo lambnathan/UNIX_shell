@@ -26,7 +26,7 @@ void check_alias(char** command_args, struct alias_table *table, int* status, in
 
 char** get_command_args(struct ast_argument_list *arglist, struct vars_table *var_table); //gets the arguemnts for the command
 
-int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table);
+int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, int *pipe_in, int *pipe_out);
 
 void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
 void assign_vars(struct vars_table *var_table, struct alias_table *table, struct ast_assignment_list *aslist);
@@ -135,11 +135,27 @@ int main(int argc, char *argv[]){
 		// memcpy(command, statements->first->pipeline->first->arglist->first->parts->first->string->data, size);
 		// command[size] = '\0';
 
+		int* pipe_in = NULL;
+		int* pipe_out = NULL;
+		struct ast_pipeline *pipeline = statements->first->pipeline;
+		while(pipeline != NULL){
+			char** command_args = get_command_args(pipeline->first->arglist, var_table);
+			if(pipeline->rest != NULL){
+				pipe_out = malloc(sizeof(int) * 2);
+				if(pipe(pipe_out) < 0){
+					printf("pipe error\n");
+					good = -1;
+					break;
+				}
+			}
+			good = dispatch_command(command_args, table, var_table, pipe_in, pipe_out);
 
-
-		char** command_args = get_command_args(statements->first->pipeline->first->arglist, var_table);
-
-		good = dispatch_command(command_args, table, var_table);
+			pipe_in = pipe_out;
+			pipe_out = NULL;
+			pipeline = pipeline->rest;
+		}
+		free(pipe_out);
+		free(pipeline);
 
 		//test print all the vars
 		// printf("VAR ASSIGNMENTS:\n");
@@ -148,7 +164,7 @@ int main(int argc, char *argv[]){
 		ast_statement_list_free(statements);
 		free(line); //by freeing line, we are also freeing output in the case of history expansion
 		free(prompt);
-		free(command_args);
+		//free(command_args);
 	}
 
 	//free memory before exiting
@@ -446,7 +462,7 @@ void assign_vars(struct vars_table *var_table, struct alias_table *table, struct
 	}
 }
 
-int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table){
+int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, int *pipe_in, int *pipe_out){
 	//first check alias table and replace any aliases if they exist
 	search_aliases(table, command_args);
 
@@ -475,6 +491,13 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 		return 1;
 	}
 	else if(cpid == 0){ //code executed by the child
+		if(pipe_in != NULL){
+			dup2(pipe_in[0], STDIN_FILENO);
+		}
+		if(pipe_out != NULL){
+			close(pipe_out[0]); //close read end of pipe
+			dup2(pipe_out[1], STDOUT_FILENO);
+		}
 		int return_status = execvp(command_args[0], command_args);
 		if(errno == EACCES){
 			printf("%s: permission denied\n", command_args[0]);
@@ -485,6 +508,9 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 		exit(return_status); //terminate child process
 	}
 	else{ //code executed by parent; should wait until the child is done
+		if(pipe_out != NULL){ //close write end of pipe if necessary
+			close(pipe_out[1]);
+		}
 		int dead_child = wait(&wstatus);
 		if(dead_child == -1){//error has occured
 			return -1;
