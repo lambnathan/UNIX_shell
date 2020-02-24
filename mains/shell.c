@@ -26,6 +26,8 @@ void check_alias(char** command_args, struct alias_table *table, int* status, in
 
 char** get_command_args(struct ast_argument_list *arglist, struct vars_table *var_table); //gets the arguemnts for the command
 
+int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table);
+
 void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
 void assign_vars(struct vars_table *var_table, struct alias_table *table, struct ast_assignment_list *aslist);
 
@@ -38,7 +40,6 @@ int main(int argc, char *argv[]){
 	char* user_name = p->pw_name;
 	strcat(user_name, " ");
 	int good = 0; //good; no command has returned error yet (return value)
-	int executed = 0; //keeps  track if a builtin has executed a command. if no builtins ran, call external commands
 
 	struct alias_table *table =  alias_table_new(); //create a new alias table
 	table->used = 0;
@@ -133,59 +134,23 @@ int main(int argc, char *argv[]){
 		// char* command = malloc(sizeof(char) * (size + 1));
 		// memcpy(command, statements->first->pipeline->first->arglist->first->parts->first->string->data, size);
 		// command[size] = '\0';
+
+
+
 		char** command_args = get_command_args(statements->first->pipeline->first->arglist, var_table);
-		
-		//CHECK ALIAS TABLE
-		search_aliases(table, command_args);
+
+		good = dispatch_command(command_args, table, var_table);
 
 		//test print all the vars
 		// printf("VAR ASSIGNMENTS:\n");
 		// print_all_vars(var_table);
 
-		//check for all of the builtin commands
-		//if a command is matched, it is executed inside the respectvie function, and then returns
-		check_exit(command_args, &good, &executed);
-		check_history(command_args, &good, &executed);
-		check_echo(command_args, &good, &executed);
-		check_cd(command_args, &good, &executed);
-		check_pwd(command_args, &good, &executed);
-		check_alias(command_args, table, &good, &executed);
-
-		if(executed != 1){ //none of the builtins were executed, so use external commands
-			//call fork(), the execve to execute the command in the child process
-			pid_t cpid;
-			int wstatus;
-			cpid = fork();
-			if(cpid == -1){ //error
-				printf("Error\n");
-				good = 1;
-			}
-			else if(cpid == 0){ //code executed by the child
-				int return_status = execvp(command_args[0], command_args);
-				if(errno == EACCES){
-					printf("%s: permission denied\n", command_args[0]);
-				}
-				else{
-					printf("%s: no such file or directory\n", command_args[0]);
-				}
-				exit(return_status); //terminate child process
-			}
-			else{ //code executed by parent; should wait until the child is done
-				int dead_child = wait(&wstatus);
-				if(dead_child == -1){//error has occured
-					good = -1;
-				}
-				//CHECK EXIT STATUS OF WSTATUS
-				good = wstatus;
-			}
-		}
-
-		executed = 0;
 		ast_statement_list_free(statements);
 		free(line); //by freeing line, we are also freeing output in the case of history expansion
 		free(prompt);
 		free(command_args);
 	}
+
 	//free memory before exiting
 	free(user_name);
 	free(p);
@@ -478,5 +443,53 @@ void assign_vars(struct vars_table *var_table, struct alias_table *table, struct
 		else{
 			vars_set(var_table, name, value); //update local environment
 		}
+	}
+}
+
+int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table){
+	//first check alias table and replace any aliases if they exist
+	search_aliases(table, command_args);
+
+	//check for all of the builtin commands
+	//if a command is matched, it is executed inside the respectvie function, and then returns
+	int builtin_executed = 0;
+	int builtin_return_status = 0;
+	check_exit(command_args, &builtin_return_status, &builtin_executed);
+	check_history(command_args, &builtin_return_status, &builtin_executed);
+	check_echo(command_args, &builtin_return_status, &builtin_executed);
+	check_cd(command_args, &builtin_return_status, &builtin_executed);
+	check_pwd(command_args, &builtin_return_status, &builtin_executed);
+	check_alias(command_args, table, &builtin_return_status, &builtin_executed);
+
+	if(builtin_executed != 0){ //a builtin was exectued, can return (dont have to worry about external commands and pipes)
+		return builtin_return_status;
+	}
+
+	//otherwise, use external commands
+	//call fork(), the execve to execute the command in the child process
+	pid_t cpid;
+	int wstatus;
+	cpid = fork();
+	if(cpid == -1){ //error forking
+		printf("Error\n");
+		return 1;
+	}
+	else if(cpid == 0){ //code executed by the child
+		int return_status = execvp(command_args[0], command_args);
+		if(errno == EACCES){
+			printf("%s: permission denied\n", command_args[0]);
+		}
+		else{
+			printf("%s: no such file or directory\n", command_args[0]);
+		}
+		exit(return_status); //terminate child process
+	}
+	else{ //code executed by parent; should wait until the child is done
+		int dead_child = wait(&wstatus);
+		if(dead_child == -1){//error has occured
+			return -1;
+		}
+		//CHECK EXIT STATUS OF WSTATUS
+		return wstatus;
 	}
 }
