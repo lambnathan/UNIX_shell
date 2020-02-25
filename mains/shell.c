@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <fcntl.h>
 #include <unistd.h>
 #include <stdio.h>
 #include <pwd.h>
@@ -26,7 +27,17 @@ void check_alias(char** command_args, struct alias_table *table, int* status, in
 
 char** get_command_args(struct ast_argument_list *arglist, struct vars_table *var_table); //gets the arguemnts for the command
 
-int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, int *pipe_in, int *pipe_out);
+
+/*
+ * command_args holds the command and its arguements, alias_table and var_table are tables for aliases and variables,
+ * pipe_in and pipe_out are input file descriptors for pipes, redirect_file is the path for file redirection,
+ * and red_fd is the number corresponding to the redirection file descriptor
+ * (0 for input, 1 for output, 2 for appending, negative for no file redirection)
+ */
+int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, 
+					int *pipe_in, int *pipe_out, char *redirect_file, int red_fd);
+
+char* get_file_path(struct ast_argument *arg);
 
 void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
 void assign_vars(struct vars_table *var_table, struct alias_table *table, struct ast_assignment_list *aslist);
@@ -119,6 +130,7 @@ int main(int argc, char *argv[]){
 
 		//parse input and get arguments
 		struct ast_statement_list *statements = parse_input(line);
+		//check if the command is to do variable assignment
 		if(statements->first->pipeline->first->assignments != NULL && statements->first->pipeline->first->arglist == NULL 
 				&& statements->first->pipeline->first->input_file == NULL && statements->first->pipeline->first->output_file == NULL
 				&& statements->first->pipeline->first->append_file == NULL){
@@ -137,9 +149,12 @@ int main(int argc, char *argv[]){
 
 		int* pipe_in = NULL;
 		int* pipe_out = NULL;
+		char *redirect_file = NULL;
+		int red_fd = -1;
 		struct ast_pipeline *pipeline = statements->first->pipeline;
 		while(pipeline != NULL){
 			char** command_args = get_command_args(pipeline->first->arglist, var_table);
+			//check if there is pipeline
 			if(pipeline->rest != NULL){
 				pipe_out = malloc(sizeof(int) * 2);
 				if(pipe(pipe_out) < 0){
@@ -148,11 +163,27 @@ int main(int argc, char *argv[]){
 					break;
 				}
 			}
-			good = dispatch_command(command_args, table, var_table, pipe_in, pipe_out);
+
+			//check if there is file redirection
+			if(pipeline->first->input_file != NULL){
+				red_fd = 0;
+				redirect_file = get_file_path(pipeline->first->input_file);
+			}
+			else if(pipeline->first->output_file != NULL){
+				red_fd = 1;
+				redirect_file = get_file_path(pipeline->first->output_file);
+			}
+			else if(pipeline->first->append_file != NULL){
+				red_fd = 2;
+				redirect_file = get_file_path(pipeline->first->append_file);
+			}
+
+			good = dispatch_command(command_args, table, var_table, pipe_in, pipe_out, redirect_file, red_fd);
 
 			pipe_in = pipe_out;
 			pipe_out = NULL;
 			pipeline = pipeline->rest;
+			red_fd = -1;
 		}
 		free(pipe_out);
 		free(pipeline);
@@ -462,7 +493,8 @@ void assign_vars(struct vars_table *var_table, struct alias_table *table, struct
 	}
 }
 
-int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, int *pipe_in, int *pipe_out){
+int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, 
+					int *pipe_in, int *pipe_out, char *redirect_file, int red_fd){
 	//first check alias table and replace any aliases if they exist
 	search_aliases(table, command_args);
 
@@ -491,13 +523,29 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 		return 1;
 	}
 	else if(cpid == 0){ //code executed by the child
-		if(pipe_in != NULL){
-			dup2(pipe_in[0], STDIN_FILENO);
+		if(pipe_in != NULL){ //get input from pipe
+			dup2(pipe_in[0], STDIN_FILENO); //read
 		}
-		if(pipe_out != NULL){
+		if(pipe_out != NULL){ //write output to pipe
 			close(pipe_out[0]); //close read end of pipe
 			dup2(pipe_out[1], STDOUT_FILENO);
 		}
+
+		if(red_fd < 0){//use file redirection
+			if(red_fd == 0){ //input
+				int fd0;
+				if((fd0 = openat(AT_FDCWD, (const char*)redirect_file, O_RDONLY)) < 0){
+
+				}
+			}
+			else if(red_fd == 1){ //output
+
+			}
+			else if(red_fd == 2){ //append
+
+			}
+		}
+
 		int return_status = execvp(command_args[0], command_args);
 		if(errno == EACCES){
 			printf("%s: permission denied\n", command_args[0]);
@@ -518,4 +566,11 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 		//CHECK EXIT STATUS OF WSTATUS
 		return wstatus;
 	}
+}
+
+char* get_file_path(struct ast_argument *arg){
+	char* path = malloc(sizeof(char) * (arg->parts->first->string->size + 1));
+	memcpy(path, arg->parts->first->string->data, arg->parts->first->string->size);
+	path[arg->parts->first->string->size] = '\0';
+	return path;
 }
