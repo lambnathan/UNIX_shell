@@ -35,7 +35,7 @@ char** get_command_args(struct ast_argument_list *arglist, struct vars_table *va
  * (0 for input, 1 for output, 2 for appending, negative for no file redirection)
  */
 int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, 
-					int *pipe_in, int *pipe_out, char *redirect_file, int red_fd);
+					int *pipe_in, int *pipe_out, char *in_file, char *out_file, char *append_file);
 
 char* get_file_path(struct ast_argument *arg);
 
@@ -149,8 +149,9 @@ int main(int argc, char *argv[]){
 
 		int* pipe_in = NULL;
 		int* pipe_out = NULL;
-		char *redirect_file = NULL;
-		int red_fd = -1;
+		char* in_file = NULL;
+		char *out_file = NULL;
+		char *append_file = NULL;
 		struct ast_pipeline *pipeline = statements->first->pipeline;
 		while(pipeline != NULL){
 			char** command_args = get_command_args(pipeline->first->arglist, var_table);
@@ -166,24 +167,20 @@ int main(int argc, char *argv[]){
 
 			//check if there is file redirection
 			if(pipeline->first->input_file != NULL){
-				red_fd = 0;
-				redirect_file = get_file_path(pipeline->first->input_file);
+				in_file = get_file_path(pipeline->first->input_file);
 			}
-			else if(pipeline->first->output_file != NULL){
-				red_fd = 1;
-				redirect_file = get_file_path(pipeline->first->output_file);
+			if(pipeline->first->output_file != NULL){
+				out_file = get_file_path(pipeline->first->output_file);
 			}
-			else if(pipeline->first->append_file != NULL){
-				red_fd = 2;
-				redirect_file = get_file_path(pipeline->first->append_file);
+			if(pipeline->first->append_file != NULL){
+				append_file = get_file_path(pipeline->first->append_file);
 			}
 
-			good = dispatch_command(command_args, table, var_table, pipe_in, pipe_out, redirect_file, red_fd);
+			good = dispatch_command(command_args, table, var_table, pipe_in, pipe_out, in_file, out_file, append_file);
 
 			pipe_in = pipe_out;
 			pipe_out = NULL;
 			pipeline = pipeline->rest;
-			red_fd = -1;
 		}
 		free(pipe_out);
 		free(pipeline);
@@ -494,7 +491,7 @@ void assign_vars(struct vars_table *var_table, struct alias_table *table, struct
 }
 
 int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, 
-					int *pipe_in, int *pipe_out, char *redirect_file, int red_fd){
+					int *pipe_in, int *pipe_out, char *in_file, char *out_file, char *append_file){
 	//first check alias table and replace any aliases if they exist
 	search_aliases(table, command_args);
 
@@ -531,19 +528,22 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 			dup2(pipe_out[1], STDOUT_FILENO);
 		}
 
-		if(red_fd < 0){//use file redirection
-			if(red_fd == 0){ //input
-				int fd0;
-				if((fd0 = openat(AT_FDCWD, (const char*)redirect_file, O_RDONLY)) < 0){
-
-				}
+		int in, out;
+		if(in_file != NULL){ //input from file
+			in = open(in_file, O_RDONLY);
+			if(in < 0){
+				printf("%s: no such file or directory\n", in_file);
+				exit(-1);
 			}
-			else if(red_fd == 1){ //output
-
-			}
-			else if(red_fd == 2){ //append
-
-			}
+			dup2(in, STDIN_FILENO); //replace standard input with file input
+		}
+		if(out_file != NULL){//output to file
+			out = open(out_file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+			dup2(out, STDOUT_FILENO);
+		}
+		if(append_file != NULL){//append outout to file
+			out = open(append_file, O_RDWR | O_APPEND | O_CREAT, 0666);
+			dup2(out, STDOUT_FILENO);
 		}
 
 		int return_status = execvp(command_args[0], command_args);
@@ -553,6 +553,8 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 		else{
 			printf("%s: no such file or directory\n", command_args[0]);
 		}
+		fflush(stdout);
+		fflush(stdin);
 		exit(return_status); //terminate child process
 	}
 	else{ //code executed by parent; should wait until the child is done
