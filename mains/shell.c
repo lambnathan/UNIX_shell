@@ -37,7 +37,7 @@ char** get_command_args(struct ast_argument_list *arglist, struct vars_table *va
 int dispatch_command(char** command_args, struct alias_table *table, struct vars_table *var_table, 
 					int *pipe_in, int *pipe_out, char *in_file, char *out_file, char *append_file);
 
-char* get_file_path(struct ast_argument *arg);
+char* get_file_path(struct ast_argument *arg, struct vars_table *var_table);
 
 void search_aliases(struct alias_table *table, char** command_args); //check if entered command is in alias table
 void assign_vars(struct vars_table *var_table, struct alias_table *table, struct ast_assignment_list *aslist);
@@ -155,6 +155,7 @@ int main(int argc, char *argv[]){
 		struct ast_pipeline *pipeline = statements->first->pipeline;
 		while(pipeline != NULL){
 			char** command_args = get_command_args(pipeline->first->arglist, var_table);
+
 			//check if there is pipeline
 			if(pipeline->rest != NULL){
 				pipe_out = malloc(sizeof(int) * 2);
@@ -167,13 +168,13 @@ int main(int argc, char *argv[]){
 
 			//check if there is file redirection
 			if(pipeline->first->input_file != NULL){
-				in_file = get_file_path(pipeline->first->input_file);
+				in_file = get_file_path(pipeline->first->input_file, var_table);
 			}
 			if(pipeline->first->output_file != NULL){
-				out_file = get_file_path(pipeline->first->output_file);
+				out_file = get_file_path(pipeline->first->output_file, var_table);
 			}
 			if(pipeline->first->append_file != NULL){
-				append_file = get_file_path(pipeline->first->append_file);
+				append_file = get_file_path(pipeline->first->append_file, var_table);
 			}
 
 			good = dispatch_command(command_args, table, var_table, pipe_in, pipe_out, in_file, out_file, append_file);
@@ -392,8 +393,8 @@ char** get_command_args(struct ast_argument_list *arglist, struct vars_table *va
 	}
 	//add in terminating NULL
 	if(capacity == used){
-			capacity *= 2;
-			arr = realloc(arr, sizeof(char*) * capacity);
+		capacity *= 2;
+		arr = realloc(arr, sizeof(char*) * capacity);
 	}
 	arr[used] = NULL;
 
@@ -570,9 +571,35 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 	}
 }
 
-char* get_file_path(struct ast_argument *arg){
-	char* path = malloc(sizeof(char) * (arg->parts->first->string->size + 1));
-	memcpy(path, arg->parts->first->string->data, arg->parts->first->string->size);
-	path[arg->parts->first->string->size] = '\0';
-	return path;
+char* get_file_path(struct ast_argument *arg, struct vars_table *var_table){
+	if(arg->parts->first->parameter != NULL){ //get value from parameter
+		//check in shell first, then the environment
+		char* param = malloc(sizeof(char) * (arg->parts->first->parameter->size + 1));
+		memcpy(param, arg->parts->first->parameter->data, arg->parts->first->parameter->size);
+		param[arg->parts->first->parameter->size] = '\0';
+		const char* to_replace = vars_get(var_table, param); //check if it needs to be replaced
+		if(to_replace != NULL){ //the aparmeter exists in the shell
+			return (char*)to_replace;
+		}
+		else if(getenv(param) != NULL){//exists in the environment
+			char* env_arg = getenv(param);
+			int i;
+			for(i = 0; env_arg[i] != '\0'; i++){}
+			char* replace = malloc(sizeof(char) * (i+1));
+			memcpy(replace, env_arg, i);
+			replace[i] = '\0';
+			return replace;
+		}
+		else{
+			char* empty = malloc(sizeof(char));
+			empty[0] = '\0';
+			return empty;
+		}
+	}
+	else{//get value from normal string
+		char* path = malloc(sizeof(char) * (arg->parts->first->string->size + 1));
+		memcpy(path, arg->parts->first->string->data, arg->parts->first->string->size);
+		path[arg->parts->first->string->size] = '\0';
+		return path;
+	}
 }
