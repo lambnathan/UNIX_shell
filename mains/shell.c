@@ -182,6 +182,9 @@ int main(int argc, char *argv[]){
 			pipe_in = pipe_out;
 			pipe_out = NULL;
 			pipeline = pipeline->rest;
+			free(out_file);
+			free(in_file);
+			free(append_file);
 		}
 		free(pipe_out);
 		free(pipeline);
@@ -533,17 +536,56 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 		if(in_file != NULL){ //input from file
 			in = open(in_file, O_RDONLY);
 			if(in < 0){
-				printf("%s: no such file or directory\n", in_file);
-				exit(-1);
+				if(errno == ENOENT){
+					printf("%s: no such file or directory\n", in_file);
+					exit(in);
+				}
+				else if(errno == EACCES){
+					printf("%s: Permission denied\n", in_file);
+					exit(in);
+				}
+				else{
+					printf("%s: Error\n", in_file);
+					exit(in);
+				}
 			}
+			
 			dup2(in, STDIN_FILENO); //replace standard input with file input
 		}
 		if(out_file != NULL){//output to file
 			out = open(out_file, O_WRONLY | O_CREAT | O_TRUNC, 0666);
+			if(out < 0){
+				if(errno == ENOENT){
+					printf("%s: no such file or directory\n", out_file);
+					exit(out);
+				}
+				else if(errno == EACCES){
+					printf("%s: Permission denied\n", out_file);
+					exit(out);
+				}
+				else{
+					printf("%s: Error\n", out_file);
+					exit(out);
+				}
+			}
 			dup2(out, STDOUT_FILENO);
 		}
 		if(append_file != NULL){//append outout to file
 			out = open(append_file, O_RDWR | O_APPEND | O_CREAT, 0666);
+			if(out < 0){
+				if(errno == ENOENT){
+					printf("%s: no such file or directory\n", append_file);
+					exit(out);
+				}
+				else if(errno == EACCES){
+					printf("%s: Permission denied\n", append_file);
+					exit(out);
+				}
+				else{
+					printf("%s: Error\n", append_file);
+					exit(out);
+				}
+			}
 			dup2(out, STDOUT_FILENO);
 		}
 
