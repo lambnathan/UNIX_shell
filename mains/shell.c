@@ -155,11 +155,7 @@ int main(int argc, char *argv[]){
 		struct ast_pipeline *pipeline = statements->first->pipeline;
 		while(pipeline != NULL){
 			char** command_args = get_command_args(pipeline->first->arglist, var_table);
-			printf("COMMAND: ");
-			for(int i = 0; command_args[i] != NULL; i++){
-				printf("%s ", command_args[i]);
-			}
-			printf("\n");
+
 			//check if there is pipeline
 			if(pipeline->rest != NULL){
 				pipe_out = malloc(sizeof(int) * 2);
@@ -172,11 +168,9 @@ int main(int argc, char *argv[]){
 
 			//check if there is file redirection
 			if(pipeline->first->input_file != NULL){
-				printf("Got input from file\n");
 				in_file = get_file_path(pipeline->first->input_file, var_table);
 			}
 			if(pipeline->first->output_file != NULL){
-				printf("printed output to file\n");
 				out_file = get_file_path(pipeline->first->output_file, var_table);
 			}
 			if(pipeline->first->append_file != NULL){
@@ -530,13 +524,6 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 		return 1;
 	}
 	else if(cpid == 0){ //code executed by the child
-		if(pipe_in != NULL){ //get input from pipe
-			dup2(pipe_in[0], STDIN_FILENO); //read
-		}
-		if(pipe_out != NULL){ //write output to pipe
-			close(pipe_out[0]); //close read end of pipe
-			dup2(pipe_out[1], STDOUT_FILENO);
-		}
 
 		int in, out;
 		if(in_file != NULL){ //input from file
@@ -594,6 +581,16 @@ int dispatch_command(char** command_args, struct alias_table *table, struct vars
 			}
 			dup2(out, STDOUT_FILENO);
 		}
+
+
+		if(pipe_in != NULL){ //get input from pipe
+			dup2(pipe_in[0], STDIN_FILENO); //read
+		}
+		if(pipe_out != NULL){ //write output to pipe
+			close(pipe_out[0]); //close read end of pipe
+			dup2(pipe_out[1], STDOUT_FILENO);
+		}
+
 
 		int return_status = execvp(command_args[0], command_args);
 		if(errno == EACCES){
