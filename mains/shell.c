@@ -182,9 +182,9 @@ int main(int argc, char *argv[]){
 			pipe_in = pipe_out;
 			pipe_out = NULL;
 			pipeline = pipeline->rest;
-			free(out_file);
-			free(in_file);
-			free(append_file);
+			//free(out_file);
+			//free(in_file);
+			//free(append_file);
 		}
 		free(pipe_out);
 		free(pipeline);
