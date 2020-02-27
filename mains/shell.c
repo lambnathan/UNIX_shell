@@ -155,7 +155,11 @@ int main(int argc, char *argv[]){
 		struct ast_pipeline *pipeline = statements->first->pipeline;
 		while(pipeline != NULL){
 			char** command_args = get_command_args(pipeline->first->arglist, var_table);
-
+			printf("COMMAND: ");
+			for(int i = 0; command_args[i] != NULL; i++){
+				printf("%s ", command_args[i]);
+			}
+			printf("\n");
 			//check if there is pipeline
 			if(pipeline->rest != NULL){
 				pipe_out = malloc(sizeof(int) * 2);
@@ -168,9 +172,11 @@ int main(int argc, char *argv[]){
 
 			//check if there is file redirection
 			if(pipeline->first->input_file != NULL){
+				printf("Got input from file\n");
 				in_file = get_file_path(pipeline->first->input_file, var_table);
 			}
 			if(pipeline->first->output_file != NULL){
+				printf("printed output to file\n");
 				out_file = get_file_path(pipeline->first->output_file, var_table);
 			}
 			if(pipeline->first->append_file != NULL){
